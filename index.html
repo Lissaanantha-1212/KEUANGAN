@@ -29,10 +29,9 @@
       const [userName, setUserName] = useState('');
       
       const [inputName, setInputName] = useState('');
-      const [inputRole, setInputRole] = useState('Internal Auditor');
-      const [inputEmail, setInputEmail] = useState('');
+      const [inputRole, setInputRole] = useState('Finance Admin');
 
-      const [currentMenu, setCurrentMenu] = useState('dashboard');
+      const [currentMenu, setCurrentMenu] = useState('input');
       const [transactions, setTransactions] = useState([]);
 
       // State Form Admin
@@ -46,21 +45,21 @@
         }
       }, [currentUser, currentMenu, userRole, transactions]);
 
-      // AKSES INSTAN: Dibuat langsung lolos tanpa terhalang error API Supabase Auth
+      // LOGIN LANSUNG TANPA EMAIL & TANPA SUPABASE AUTH HASSLE
       const handleQuickRegister = (e) => {
         e.preventDefault();
-        if (!inputName || !inputEmail) {
-          alert("Mohon isi Nama dan Email!");
+        if (!inputName.trim()) {
+          alert("Mohon isi Nama Lengkap!");
           return;
         }
 
-        // Set state user secara langsung
-        setCurrentUser({ email: inputEmail });
+        // Simpan sesi user secara lokal
+        setCurrentUser({ name: inputName });
         setUserName(inputName);
         setUserRole(inputRole);
         setMenuByRole(inputRole);
 
-        // Load data transaksi
+        // Ambil data transaksi dari Supabase database
         loadTransactions();
       };
 
@@ -74,7 +73,7 @@
       const loadTransactions = async () => {
         try {
           const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-          setTransactions(data || []);
+          if (data) setTransactions(data);
         } catch (err) {
           console.log("Supabase fetch error:", err);
         }
@@ -95,17 +94,19 @@
           }]);
 
           if (!error) {
-            alert('Transaksi berhasil dicatat!');
+            alert('Transaksi berhasil disimpan!');
             setVendorName('');
             setAmount('');
             loadTransactions();
+          } else {
+            alert('Gagal menyimpan ke Supabase: ' + error.message);
           }
         } catch (err) {
-          alert('Gagal menyimpan transaksi ke database.');
+          alert('Terjadi kesalahan koneksi.');
         }
       };
 
-      // TAMPILAN 1: PORTAL LOGIN / REGISTER (INSTAN)
+      // 1. TAMPILAN LOGIN (HANYA NAMA + POSISI)
       if (!currentUser) {
         return (
           <div className="flex h-screen items-center justify-center bg-slate-950 p-4">
@@ -126,19 +127,7 @@
                     required 
                     value={inputName} 
                     onChange={(e) => setInputName(e.target.value)} 
-                    placeholder="Contoh: Lissa" 
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500" 
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 mb-1">Email Pengguna</label>
-                  <input 
-                    type="email" 
-                    required 
-                    value={inputEmail} 
-                    onChange={(e) => setInputEmail(e.target.value)} 
-                    placeholder="lissa@fincore.id" 
+                    placeholder="Masukkan nama Anda (cth: Lissa)" 
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500" 
                   />
                 </div>
@@ -150,8 +139,8 @@
                     onChange={(e) => setInputRole(e.target.value)} 
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-indigo-400 font-bold focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="Internal Auditor">Internal Auditor (Pengawas Risiko & Fraud)</option>
                     <option value="Finance Admin">Finance Admin (Operator Entry Transaksi)</option>
+                    <option value="Internal Auditor">Internal Auditor (Pengawas Risiko & Fraud)</option>
                     <option value="Finance Controller">Finance Controller (Pengelola Pajak & Cabang)</option>
                     <option value="CFO / Direksi">CFO / Direksi (Executive Control Tower)</option>
                   </select>
@@ -169,11 +158,11 @@
         );
       }
 
-      // TAMPILAN 2: UTAMA SETELAH MASUK
+      // 2. TAMPILAN DASHBOARD UTAMA
       return (
         <div className="flex h-screen overflow-hidden bg-slate-950">
           
-          {/* SIDEBAR NAVIGATION DENGAN FILTER JABATAN */}
+          {/* SIDEBAR */}
           <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0">
             <div>
               <div className="p-5 border-b border-slate-800 flex items-center gap-3">
@@ -185,11 +174,6 @@
               </div>
 
               <nav className="p-3 space-y-1 text-xs font-medium">
-                {(userRole === 'CFO / Direksi' || userRole === 'Internal Auditor') && (
-                  <button onClick={() => setCurrentMenu('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${currentMenu === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
-                    <i data-lucide="layout-dashboard" className="w-4 h-4"></i> Executive Dashboard
-                  </button>
-                )}
                 {(userRole === 'Finance Admin' || userRole === 'CFO / Direksi') && (
                   <button onClick={() => setCurrentMenu('input')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${currentMenu === 'input' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
                     <i data-lucide="receipt" className="w-4 h-4"></i> Smart Entry & Audit Guard
@@ -205,49 +189,29 @@
                     <i data-lucide="percent" className="w-4 h-4"></i> Tax & Branch Control
                   </button>
                 )}
+                {(userRole === 'CFO / Direksi' || userRole === 'Internal Auditor') && (
+                  <button onClick={() => setCurrentMenu('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${currentMenu === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                    <i data-lucide="layout-dashboard" className="w-4 h-4"></i> Executive Dashboard
+                  </button>
+                )}
               </nav>
             </div>
 
             <div className="p-3 border-t border-slate-800 space-y-2">
               <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                <div className="text-[10px] text-slate-500">Terhubung sebagai:</div>
+                <div className="text-[10px] text-slate-500">Pengguna Aktif:</div>
                 <div className="text-xs font-bold text-white truncate">{userName}</div>
               </div>
               <button onClick={() => setCurrentUser(null)} className="w-full text-center text-xs text-red-400 py-1.5 hover:underline font-semibold">
-                Keluar Akun (Logout)
+                Keluar (Logout)
               </button>
             </div>
           </aside>
 
-          {/* AREA WORKSPACE UTAMA */}
+          {/* MAIN CONTENT WORKSPACE */}
           <main className="flex-1 overflow-y-auto p-8">
             
-            {/* 1. TAMPILAN DIREKSI / CFO */}
-            {currentMenu === 'dashboard' && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl font-bold text-white">Executive Control Tower</h2>
-                  <p className="text-xs text-slate-400">Ringkasan kesehatan finansial tingkat tinggi untuk Direksi.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-                    <span className="text-xs text-slate-400">Total Liquid Cash</span>
-                    <div className="text-2xl font-bold text-emerald-400 mt-2">Rp 1.480.000.000</div>
-                  </div>
-                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-                    <span className="text-xs text-slate-400">Cash Runway</span>
-                    <div className="text-2xl font-bold text-amber-400 mt-2">14 Bulan 12 Hari</div>
-                  </div>
-                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-                    <span className="text-xs text-slate-400">Status Kewaspadaan</span>
-                    <div className="text-2xl font-bold text-indigo-400 mt-2">Aman / Stabil</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 2. TAMPILAN FINANCE ADMIN */}
+            {/* WORKSPACE FINANCE ADMIN */}
             {currentMenu === 'input' && (
               <div className="space-y-6 max-w-2xl">
                 <div>
@@ -277,7 +241,7 @@
               </div>
             )}
 
-            {/* 3. TAMPILAN INTERNAL AUDITOR */}
+            {/* WORKSPACE INTERNAL AUDITOR */}
             {currentMenu === 'audit' && (
               <div className="space-y-6">
                 <div>
@@ -310,8 +274,8 @@
                               </span>
                             </td>
                             <td className="p-3">
-                              <button onClick={() => alert('Transaksi disetujui auditor!')} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded mr-2">Disetujui</button>
-                              <button onClick={() => alert('Transaksi ditandai Fraud!')} className="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Tolak (Fraud)</button>
+                              <button onClick={() => alert('Transaksi disetujui!')} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded mr-2">Disetujui</button>
+                              <button onClick={() => alert('Transaksi ditandai Fraud!')} className="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Tolak</button>
                             </td>
                           </tr>
                         ))}
@@ -322,7 +286,7 @@
               </div>
             )}
 
-            {/* 4. TAMPILAN FINANCE CONTROLLER */}
+            {/* WORKSPACE CONTROLLER */}
             {currentMenu === 'tax' && (
               <div className="space-y-6">
                 <div>
@@ -338,6 +302,31 @@
                   <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
                     <span className="text-xs text-slate-400">Estimasi PPh 21/23 Aktif</span>
                     <div className="text-2xl font-bold text-sky-400 mt-2">Rp 12.500.000</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* WORKSPACE CFO */}
+            {currentMenu === 'dashboard' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Executive Control Tower</h2>
+                  <p className="text-xs text-slate-400">Ringkasan kesehatan finansial tingkat tinggi untuk Direksi.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                    <span className="text-xs text-slate-400">Total Liquid Cash</span>
+                    <div className="text-2xl font-bold text-emerald-400 mt-2">Rp 1.480.000.000</div>
+                  </div>
+                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                    <span className="text-xs text-slate-400">Cash Runway</span>
+                    <div className="text-2xl font-bold text-amber-400 mt-2">14 Bulan 12 Hari</div>
+                  </div>
+                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                    <span className="text-xs text-slate-400">Status Kewaspadaan</span>
+                    <div className="text-2xl font-bold text-indigo-400 mt-2">Aman / Stabil</div>
                   </div>
                 </div>
               </div>
