@@ -51,7 +51,7 @@
         }
       }, [currentUser, currentMenu, userRole, transactions]);
 
-      // LOGIN INSTAN HANYA NAMA + POSISI
+      // LOGIN INSTAN NAMA & JABATAN
       const handleQuickRegister = (e) => {
         e.preventDefault();
         if (!inputName.trim()) {
@@ -75,13 +75,15 @@
 
       const loadTransactions = async () => {
         try {
-          const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+          const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
           if (data) setTransactions(data);
+          if (error) console.log("Fetch Error:", error.message);
         } catch (err) {
-          console.log("Supabase fetch error:", err);
+          console.log("Supabase error:", err);
         }
       };
 
+      // FUNGSI SIMPAN TRANSAKSI DENGAN STRUKTUR KOLOM DARI SOLUSI 1
       const handleAddTransaction = async (e) => {
         e.preventDefault();
         const numAmount = parseFloat(amount);
@@ -110,29 +112,14 @@
         try {
           const { error } = await supabase.from('transactions').insert([newRecord]);
           if (!error) {
-            alert('Transaksi berhasil disimpan & diperiksa oleh Audit Guard!');
+            alert('Berhasil! Transaksi telah disimpan ke Supabase & diperiksa oleh Audit Guard.');
             setVendorName('');
             setAmount('');
             setNotes('');
             setFileName('');
             loadTransactions();
           } else {
-            // Fallback jika kolom baru belum ada di Supabase DB
-            const { error: err2 } = await supabase.from('transactions').insert([{
-              vendor_name: vendorName,
-              amount: numAmount,
-              cost_center: costCenter,
-              risk_score: calculatedRisk,
-              status: calculatedRisk > 40 ? 'PENDING_AUDIT' : 'APPROVED'
-            }]);
-            if (!err2) {
-              alert('Transaksi berhasil dicatat!');
-              setVendorName('');
-              setAmount('');
-              loadTransactions();
-            } else {
-              alert('Error: ' + err2.message);
-            }
+            alert('Error Simpan: ' + error.message);
           }
         } catch (err) {
           alert('Terjadi kesalahan koneksi.');
@@ -146,7 +133,7 @@
         }
       };
 
-      // 1. FORM LOGIN
+      // 1. HALAMAN LOGIN
       if (!currentUser) {
         return (
           <div className="flex h-screen items-center justify-center bg-slate-950 p-4">
@@ -198,15 +185,15 @@
         );
       }
 
-      // Hitung statistik admin
+      // Hitung Ringkasan Data
       const totalAmount = transactions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
       const pendingCount = transactions.filter(t => t.status === 'PENDING_AUDIT').length;
 
-      // 2. MAIN DASHBOARD
+      // 2. UTAMA DASHBOARD
       return (
         <div className="flex h-screen overflow-hidden bg-slate-950">
           
-          {/* SIDEBAR */}
+          {/* SIDEBAR NAVIGATION */}
           <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0">
             <div>
               <div className="p-5 border-b border-slate-800 flex items-center gap-3">
@@ -252,14 +239,14 @@
             </div>
           </aside>
 
-          {/* MAIN CONTENT WORKSPACE */}
+          {/* WORKSPACE AREA */}
           <main className="flex-1 overflow-y-auto p-8">
             
-            {/* WORKSPACE FINANCE ADMIN LENGKAP & INTERAKTIF */}
+            {/* 1. FINANCE ADMIN WORKSPACE */}
             {currentMenu === 'input' && (
               <div className="space-y-6 max-w-6xl mx-auto">
                 
-                {/* HEADER & TOP STATS */}
+                {/* HEADER */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
                   <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -276,7 +263,7 @@
                   </div>
                 </div>
 
-                {/* SUMMARY METRICS CARDS */}
+                {/* CARDS METRICS */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
                     <div>
@@ -309,10 +296,10 @@
                   </div>
                 </div>
 
-                {/* FORM INPUT LENGKAP & PREVIEW RISK */}
+                {/* FORM ENTRY & LIVE RISK ENGINE */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   
-                  {/* FORM INPUT (2 KANAN/KIRI) */}
+                  {/* FORM INPUT utama */}
                   <form onSubmit={handleAddTransaction} className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                       <h3 className="font-bold text-sm text-white flex items-center gap-2">
@@ -395,7 +382,7 @@
                     </button>
                   </form>
 
-                  {/* SIDE PANEL: LIVE RISK ENGINE PREVIEW */}
+                  {/* SIDE PANEL: LIVE RISK ENGINE */}
                   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs flex flex-col justify-between">
                     <div>
                       <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-3 flex items-center gap-2">
@@ -437,7 +424,7 @@
 
                 </div>
 
-                {/* RIWAYAT TABEL TRANSAKSI TERAKHIR */}
+                {/* TABEL DATA TERBARU */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                     <h3 className="font-bold text-sm text-white flex items-center gap-2">
@@ -507,7 +494,7 @@
               </div>
             )}
 
-            {/* WORKSPACE INTERNAL AUDITOR */}
+            {/* 2. AUDITOR WORKSPACE */}
             {currentMenu === 'audit' && (
               <div className="space-y-6">
                 <div>
@@ -552,7 +539,7 @@
               </div>
             )}
 
-            {/* WORKSPACE CONTROLLER */}
+            {/* 3. CONTROLLER WORKSPACE */}
             {currentMenu === 'tax' && (
               <div className="space-y-6">
                 <div>
@@ -573,7 +560,7 @@
               </div>
             )}
 
-            {/* WORKSPACE CFO */}
+            {/* 4. CFO WORKSPACE */}
             {currentMenu === 'dashboard' && (
               <div className="space-y-6">
                 <div>
