@@ -32,7 +32,12 @@
       const [inputRole, setInputRole] = useState('Finance Admin');
 
       const [currentMenu, setCurrentMenu] = useState('input');
+      const [adminSubTab, setAdminSubTab] = useState('entry'); // entry | vendors | petty | export
       const [transactions, setTransactions] = useState([]);
+
+      // Filter & Search State
+      const [searchQuery, setSearchQuery] = useState('');
+      const [filterCostCenter, setFilterCostCenter] = useState('ALL');
 
       // State Form Admin
       const [transType, setTransType] = useState('EXPENSE');
@@ -49,15 +54,12 @@
         if (window.lucide) {
           lucide.createIcons();
         }
-      }, [currentUser, currentMenu, userRole, transactions]);
+      }, [currentUser, currentMenu, adminSubTab, userRole, transactions]);
 
-      // LOGIN INSTAN NAMA & JABATAN
+      // LOGIN INSTAN
       const handleQuickRegister = (e) => {
         e.preventDefault();
-        if (!inputName.trim()) {
-          alert("Mohon isi Nama Lengkap!");
-          return;
-        }
+        if (!inputName.trim()) return alert("Mohon isi Nama Lengkap!");
 
         setCurrentUser({ name: inputName });
         setUserName(inputName);
@@ -89,7 +91,6 @@
         const numAmount = parseFloat(amount);
         if (isNaN(numAmount) || numAmount <= 0) return alert("Nominal transaksi harus berupa angka positif!");
 
-        // Hitung Risk Score Otomatis
         let calculatedRisk = 10;
         if (numAmount > 100000000) calculatedRisk = 85;
         else if (numAmount > 50000000) calculatedRisk = 50;
@@ -115,7 +116,7 @@
         try {
           const { error } = await supabase.from('transactions').insert([newRecord]);
           if (!error) {
-            alert('Berhasil! Transaksi telah disimpan ke Supabase & diperiksa oleh Audit Guard.');
+            alert('Berhasil! Transaksi telah disimpan.');
             setVendorName('');
             setAmount('');
             setNotes('');
@@ -136,7 +137,54 @@
         }
       };
 
-      // 1. HALAMAN LOGIN
+      // EXPORT KE CSV
+      const handleExportCSV = () => {
+        if (transactions.length === 0) return alert("Tidak ada data transaksi untuk diexport!");
+        const headers = ["Kode TRX", "Tanggal", "Vendor", "Tipe", "Nominal", "Cost Center", "Metode", "Pajak", "Status"];
+        const rows = transactions.map(t => [
+          t.transaction_code || `TRX-${t.id}`,
+          t.trans_date || '',
+          `"${t.vendor_name || ''}"`,
+          t.type || 'EXPENSE',
+          t.amount || 0,
+          `"${t.cost_center || ''}"`,
+          `"${t.payment_method || ''}"`,
+          `"${t.tax_category || ''}"`,
+          t.status || 'APPROVED'
+        ]);
+        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Laporan_FinCore_Admin_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      // FILTER TRANSAKSI
+      const filteredTransactions = transactions.filter(t => {
+        const matchesSearch = (t.vendor_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              (t.transaction_code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              (t.notes || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCostCenter = filterCostCenter === 'ALL' || t.cost_center === filterCostCenter;
+        return matchesSearch && matchesCostCenter;
+      });
+
+      // DIREKTORI VENDOR (PERHITUNGAN AGREGAT)
+      const vendorStats = transactions.reduce((acc, curr) => {
+        const v = curr.vendor_name || 'Uncategorized';
+        if (!acc[v]) acc[v] = { count: 0, total: 0, lastDate: curr.trans_date };
+        acc[v].count += 1;
+        acc[v].total += (curr.amount || 0);
+        return acc;
+      }, {});
+
+      // KAS KECIL FILTER
+      const pettyCashTransactions = transactions.filter(t => t.payment_method === 'Petty Cash');
+      const pettyCashTotal = pettyCashTransactions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+
+      // HALAMAN LOGIN
       if (!currentUser) {
         return (
           <div className="flex h-screen items-center justify-center bg-slate-950 p-4">
@@ -152,34 +200,20 @@
               <form onSubmit={handleQuickRegister} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">Nama Lengkap</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={inputName} 
-                    onChange={(e) => setInputName(e.target.value)} 
-                    placeholder="Masukkan nama Anda (cth: Lissa)" 
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500" 
-                  />
+                  <input type="text" required value={inputName} onChange={(e) => setInputName(e.target.value)} placeholder="Masukkan nama Anda (cth: Lissa)" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500" />
                 </div>
 
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">Posisi / Jabatan</label>
-                  <select 
-                    value={inputRole} 
-                    onChange={(e) => setInputRole(e.target.value)} 
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-indigo-400 font-bold focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="Finance Admin">Finance Admin (Operator Entry Transaksi)</option>
+                  <select value={inputRole} onChange={(e) => setInputRole(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-indigo-400 font-bold focus:outline-none focus:border-indigo-500">
+                    <option value="Finance Admin">Finance Admin (Operator Entry & Rekonsiliasi)</option>
                     <option value="Internal Auditor">Internal Auditor (Pengawas Risiko & Fraud)</option>
                     <option value="Finance Controller">Finance Controller (Pengelola Pajak & Cabang)</option>
                     <option value="CFO / Direksi">CFO / Direksi (Executive Control Tower)</option>
                   </select>
                 </div>
 
-                <button 
-                  type="submit" 
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/25 mt-2 transition-all active:scale-95"
-                >
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/25 mt-2 transition-all active:scale-95">
                   Masuk ke Dashboard
                 </button>
               </form>
@@ -188,11 +222,9 @@
         );
       }
 
-      // Hitung Ringkasan Data
       const totalAmount = transactions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
       const pendingCount = transactions.filter(t => t.status === 'PENDING_AUDIT').length;
 
-      // 2. UTAMA DASHBOARD
       return (
         <div className="flex h-screen overflow-hidden bg-slate-950">
           
@@ -210,7 +242,7 @@
               <nav className="p-3 space-y-1 text-xs font-medium">
                 {(userRole === 'Finance Admin' || userRole === 'CFO / Direksi') && (
                   <button onClick={() => setCurrentMenu('input')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${currentMenu === 'input' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
-                    <i data-lucide="receipt" className="w-4 h-4"></i> Smart Entry & Audit Guard
+                    <i data-lucide="receipt" className="w-4 h-4"></i> Admin Operations Hub
                   </button>
                 )}
                 {(userRole === 'Internal Auditor' || userRole === 'CFO / Direksi') && (
@@ -249,42 +281,73 @@
             {currentMenu === 'input' && (
               <div className="space-y-6 max-w-6xl mx-auto">
                 
-                {/* HEADER */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                  <div>
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                      <i data-lucide="receipt" className="text-indigo-500 w-6 h-6"></i>
-                      Smart Entry Workspace (Finance Admin)
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-1">Panel input pencatatan nota harian, manajemen vendor, dan penjaminan mutu audit.</p>
+                {/* HEADER & SUB-NAVIGASI FITUR ADMIN */}
+                <div className="border-b border-slate-800 pb-5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="briefcase" className="text-indigo-500 w-6 h-6"></i>
+                        Finance Admin Operations Hub
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-1">Pusat pencatatan nota, manajemen vendor, pengelolaan kas kecil, & laporan transaksi.</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button onClick={loadTransactions} className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs px-3 py-2 rounded-xl flex items-center gap-2 font-medium">
+                        <i data-lucide="refresh-cw" className="w-3.5 h-3.5"></i> Refresh
+                      </button>
+                      <button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-xl flex items-center gap-2 font-semibold shadow-lg shadow-emerald-600/20">
+                        <i data-lucide="download" className="w-3.5 h-3.5"></i> Export CSV
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button onClick={loadTransactions} className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs px-3 py-2 rounded-xl flex items-center gap-2 font-medium">
-                      <i data-lucide="refresh-cw" className="w-3.5 h-3.5"></i> Refresh Data
+                  {/* TAB MENU INTERNAL ADMIN */}
+                  <div className="flex border-b border-slate-800 gap-2 text-xs font-semibold">
+                    <button onClick={() => setAdminSubTab('entry')} className={`pb-2.5 px-3 border-b-2 flex items-center gap-2 ${adminSubTab === 'entry' ? 'border-indigo-500 text-indigo-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                      <i data-lucide="edit-3" className="w-3.5 h-3.5"></i> 📝 Smart Entry & Live Audit
+                    </button>
+                    <button onClick={() => setAdminSubTab('vendors')} className={`pb-2.5 px-3 border-b-2 flex items-center gap-2 ${adminSubTab === 'vendors' ? 'border-indigo-500 text-indigo-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                      <i data-lucide="users" className="w-3.5 h-3.5"></i> 🏢 Direktori Vendor ({Object.keys(vendorStats).length})
+                    </button>
+                    <button onClick={() => setAdminSubTab('petty')} className={`pb-2.5 px-3 border-b-2 flex items-center gap-2 ${adminSubTab === 'petty' ? 'border-indigo-500 text-indigo-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                      <i data-lucide="wallet" className="w-3.5 h-3.5"></i> 💵 Kas Kecil (Petty Cash)
+                    </button>
+                    <button onClick={() => setAdminSubTab('export')} className={`pb-2.5 px-3 border-b-2 flex items-center gap-2 ${adminSubTab === 'export' ? 'border-indigo-500 text-indigo-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                      <i data-lucide="file-spreadsheet" className="w-3.5 h-3.5"></i> 📊 Analisis & Filter Data
                     </button>
                   </div>
                 </div>
 
-                {/* CARDS METRICS */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* METRICS SUMMARY */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-slate-400 font-medium">Total Transaksi Selesai</div>
-                      <div className="text-xl font-bold text-white mt-1">{transactions.length} Transaksi</div>
+                      <div className="text-xs text-slate-400 font-medium">Total Transaksi</div>
+                      <div className="text-xl font-bold text-white mt-1">{transactions.length} Item</div>
                     </div>
-                    <div className="h-10 w-10 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center font-bold">
-                      <i data-lucide="file-check" className="w-5 h-5"></i>
+                    <div className="h-9 w-9 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center font-bold">
+                      <i data-lucide="file-text" className="w-4 h-4"></i>
                     </div>
                   </div>
 
                   <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-slate-400 font-medium">Menunggu Verification Auditor</div>
-                      <div className="text-xl font-bold text-amber-400 mt-1">{pendingCount} Transaksi</div>
+                      <div className="text-xs text-slate-400 font-medium">Pending Auditor</div>
+                      <div className="text-xl font-bold text-amber-400 mt-1">{pendingCount} Item</div>
                     </div>
-                    <div className="h-10 w-10 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center font-bold">
-                      <i data-lucide="clock" className="w-5 h-5"></i>
+                    <div className="h-9 w-9 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center font-bold">
+                      <i data-lucide="clock" className="w-4 h-4"></i>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-slate-400 font-medium">Pengeluaran Petty Cash</div>
+                      <div className="text-xl font-bold text-sky-400 mt-1">Rp {pettyCashTotal.toLocaleString('id-ID')}</div>
+                    </div>
+                    <div className="h-9 w-9 bg-sky-500/10 text-sky-400 rounded-xl flex items-center justify-center font-bold">
+                      <i data-lucide="coins" className="w-4 h-4"></i>
                     </div>
                   </div>
 
@@ -293,210 +356,347 @@
                       <div className="text-xs text-slate-400 font-medium">Total Volume Terinput</div>
                       <div className="text-xl font-bold text-emerald-400 mt-1">Rp {totalAmount.toLocaleString('id-ID')}</div>
                     </div>
-                    <div className="h-10 w-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center font-bold">
-                      <i data-lucide="wallet" className="w-5 h-5"></i>
+                    <div className="h-9 w-9 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center font-bold">
+                      <i data-lucide="credit-card" className="w-4 h-4"></i>
                     </div>
                   </div>
                 </div>
 
-                {/* FORM ENTRY & LIVE RISK ENGINE */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  
-                  {/* FORM INPUT UTAMA */}
-                  <form onSubmit={handleAddTransaction} className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs">
+                {/* MODUL TAB 1: ENTRY & LIVE AUDIT */}
+                {adminSubTab === 'entry' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* FORM INPUT UTAMA */}
+                      <form onSubmit={handleAddTransaction} className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                            <i data-lucide="plus-circle" className="text-indigo-400 w-4 h-4"></i> Form Catat Transaksi Baru
+                          </h3>
+                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Auto Audit Active</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Tipe Transaksi</label>
+                            <select value={transType} onChange={(e) => setTransType(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-medium">
+                              <option value="EXPENSE">Pengeluaran (Expense / Payout)</option>
+                              <option value="INCOME">Pemasukan (Income / Revenue)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Tanggal Transaksi</label>
+                            <input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Nama Vendor / Klien / Pihak Ke-3</label>
+                            <input type="text" required value={vendorName} onChange={(e) => setVendorName(e.target.value)} placeholder="Contoh: PT Vendor Jaya Utama" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Nominal Transaksi (Rp)</label>
+                            <input type="number" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Contoh: 15000000" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-mono" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Cost Center / Departemen</label>
+                            <select value={costCenter} onChange={(e) => setCostCenter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+                              <option value="Operational">Operasional Head Office</option>
+                              <option value="Marketing">Pemasaran & Advertising</option>
+                              <option value="IT Subscriptions">Sewa Server & Software</option>
+                              <option value="HR & Payroll">SDM & Gaji</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Metode Pembayaran</label>
+                            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+                              <option value="Bank Transfer">Bank Transfer (BCA/Mandiri)</option>
+                              <option value="Corporate Credit Card">Kartu Kredit Perusahaan</option>
+                              <option value="Petty Cash">Kas Kecil (Petty Cash)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Kategori Pajak</label>
+                            <select value={taxCategory} onChange={(e) => setTaxCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+                              <option value="PPN 11%">PPN 11% Terhitung</option>
+                              <option value="PPh 23">PPh 23 (Jasa)</option>
+                              <option value="Non-Pajak">Bebas Pajak / Non-Pajak</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Upload Bukti / Nota (PDF/JPG)</label>
+                            <input type="file" onChange={(e) => setFileName(e.target.files[0]?.name || '')} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer" />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-400 mb-1 font-semibold">Catatan / Urgensi Transaksi</label>
+                            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Catatan tambahan untuk auditor..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
+                          </div>
+                        </div>
+
+                        <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 text-sm mt-2">
+                          <i data-lucide="send" className="w-4 h-4"></i> Simpan Transaksi & Analisis Risiko
+                        </button>
+                      </form>
+
+                      {/* SIDE PANEL: LIVE RISK ENGINE */}
+                      <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-3 flex items-center gap-2">
+                            <i data-lucide="shield-check" className="text-emerald-400 w-4 h-4"></i> Audit Guard Live Meter
+                          </h3>
+
+                          <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                            <div className="text-slate-400">Estimasi Skor Risiko:</div>
+                            <div className="flex items-baseline gap-2">
+                              <span className={`text-3xl font-black ${parseFloat(amount) > 100000000 ? 'text-red-400' : parseFloat(amount) > 50000000 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                {parseFloat(amount) > 100000000 ? '85%' : parseFloat(amount) > 50000000 ? '50%' : '10%'}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-bold">
+                                {parseFloat(amount) > 100000000 ? 'HIGH RISK' : parseFloat(amount) > 50000000 ? 'MEDIUM RISK' : 'LOW RISK'}
+                              </span>
+                            </div>
+
+                            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                              <div className={`h-full ${parseFloat(amount) > 100000000 ? 'bg-red-500 w-[85%]' : parseFloat(amount) > 50000000 ? 'bg-amber-500 w-[50%]' : 'bg-emerald-500 w-[10%]'}`}></div>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
+                              {parseFloat(amount) > 100000000 
+                                ? "⚠️ Transaksi di atas Rp 100 Juta akan ditahan secara otomatis untuk diperiksa ulang oleh Internal Auditor." 
+                                : "✅ Transaksi memenuhi standar batas aman operasional harian."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 text-[11px] space-y-1">
+                          <div className="font-bold flex items-center gap-1">
+                            <i data-lucide="info" className="w-3.5 h-3.5"></i> Tips Admin:
+                          </div>
+                          <p>Gunakan tab <b>Direktori Vendor</b> untuk mengecek akumulasi pengeluaran per mitra bisnis.</p>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* TABEL DATA PENCATATAN TERBARU */}
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                        <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                          <i data-lucide="list-tree" className="text-indigo-400 w-4 h-4"></i> Riwayat Pencatatan Transaksi Terbaru
+                        </h3>
+                        
+                        {/* SEARCH & FILTER FAST */}
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Cari Vendor / Kode..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          />
+                          <select 
+                            value={filterCostCenter}
+                            onChange={(e) => setFilterCostCenter(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300"
+                          >
+                            <option value="ALL">Semua Cost Center</option>
+                            <option value="Operational">Operasional</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="IT Subscriptions">IT Subscriptions</option>
+                            <option value="HR & Payroll">HR & Payroll</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {filteredTransactions.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">Tidak ada data transaksi yang cocok dengan pencarian.</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold">
+                              <tr>
+                                <th className="p-3">Kode TRX</th>
+                                <th className="p-3">Vendor / Pihak Ke-3</th>
+                                <th className="p-3">Cost Center</th>
+                                <th className="p-3">Nominal</th>
+                                <th className="p-3">Audit Risk</th>
+                                <th className="p-3">Status Verification</th>
+                                <th className="p-3 text-right">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800 text-slate-200">
+                              {filteredTransactions.map(t => (
+                                <tr key={t.id} className="hover:bg-slate-800/50">
+                                  <td className="p-3 font-mono text-[11px] text-slate-400 font-bold">
+                                    {t.transaction_code || `TRX-${t.id}`}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="font-bold text-white">{t.vendor_name}</div>
+                                    <div className="text-[10px] text-slate-500">{t.payment_method || 'Bank Transfer'} • {t.tax_category || 'PPN 11%'}</div>
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="bg-slate-950 border border-slate-800 px-2 py-1 rounded text-[10px] text-slate-300">
+                                      {t.cost_center || 'Operational'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 font-mono font-bold text-indigo-300">
+                                    Rp {(t.amount || 0).toLocaleString('id-ID')}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.risk_score > 40 ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
+                                      {t.risk_score || 10}% {t.risk_score > 40 ? 'HIGH' : 'LOW'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    {t.status === 'PENDING_AUDIT' ? (
+                                      <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] font-bold">Pending Audit</span>
+                                    ) : (
+                                      <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px] font-bold">Approved</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right space-x-2">
+                                    <button onClick={() => alert(`Kwitansi Bukti ${t.vendor_name} berhasil dicetak!`)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[10px] font-semibold">
+                                      Cetak
+                                    </button>
+                                    <button onClick={() => handleDeleteTransaction(t.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded text-[10px] font-semibold">
+                                      Hapus
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* MODUL TAB 2: DIREKTORI VENDOR */}
+                {adminSubTab === 'vendors' && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                        <i data-lucide="plus-circle" className="text-indigo-400 w-4 h-4"></i> Form Catat Transaksi Baru
-                      </h3>
-                      <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Auto Audit Active</span>
+                      <div>
+                        <h3 className="font-bold text-sm text-white">Direktori & Profil Akumulasi Vendor</h3>
+                        <p className="text-slate-400 text-[11px] mt-0.5">Daftar mitra bisnis yang sering melakukan transaksi dengan perusahaan.</p>
+                      </div>
+                      <span className="bg-indigo-500/20 text-indigo-300 font-bold px-3 py-1 rounded-full text-[11px]">
+                        {Object.keys(vendorStats).length} Vendor Terdaftar
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Tipe Transaksi</label>
-                        <select value={transType} onChange={(e) => setTransType(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-medium">
-                          <option value="EXPENSE">Pengeluaran (Expense / Payout)</option>
-                          <option value="INCOME">Pemasukan (Income / Revenue)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Tanggal Transaksi</label>
-                        <input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Nama Vendor / Klien / Pihak Ke-3</label>
-                        <input type="text" required value={vendorName} onChange={(e) => setVendorName(e.target.value)} placeholder="Contoh: PT Vendor Jaya Utama" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Nominal Transaksi (Rp)</label>
-                        <input type="number" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Contoh: 15000000" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-mono" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Cost Center / Departemen</label>
-                        <select value={costCenter} onChange={(e) => setCostCenter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
-                          <option value="Operational">Operasional Head Office</option>
-                          <option value="Marketing">Pemasaran & Advertising</option>
-                          <option value="IT Subscriptions">Sewa Server & Software</option>
-                          <option value="HR & Payroll">SDM & Gaji</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Metode Pembayaran</label>
-                        <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
-                          <option value="Bank Transfer">Bank Transfer (BCA/Mandiri)</option>
-                          <option value="Corporate Credit Card">Kartu Kredit Perusahaan</option>
-                          <option value="Petty Cash">Kas Kecil (Petty Cash)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Kategori Pajak</label>
-                        <select value={taxCategory} onChange={(e) => setTaxCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
-                          <option value="PPN 11%">PPN 11% Terhitung</option>
-                          <option value="PPh 23">PPh 23 (Jasa)</option>
-                          <option value="Non-Pajak">Bebas Pajak / Non-Pajak</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold font-mono">Upload Bukti / Nota (PDF/JPG)</label>
-                        <input type="file" onChange={(e) => setFileName(e.target.files[0]?.name || '')} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer" />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Catatan / Urgensi Transaksi</label>
-                        <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Catatan tambahan untuk auditor..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white" />
-                      </div>
-                    </div>
-
-                    <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 text-sm mt-2">
-                      <i data-lucide="send" className="w-4 h-4"></i> Simpan Transaksi & Analisis Risiko
-                    </button>
-                  </form>
-
-                  {/* SIDE PANEL: LIVE RISK ENGINE */}
-                  <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs flex flex-col justify-between">
-                    <div>
-                      <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-3 flex items-center gap-2">
-                        <i data-lucide="shield-check" className="text-emerald-400 w-4 h-4"></i> Audit Guard Live Meter
-                      </h3>
-
-                      <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                        <div className="text-slate-400">Estimasi Skor Risiko:</div>
-                        <div className="flex items-baseline gap-2">
-                          <span className={`text-3xl font-black ${parseFloat(amount) > 100000000 ? 'text-red-400' : parseFloat(amount) > 50000000 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                            {parseFloat(amount) > 100000000 ? '85%' : parseFloat(amount) > 50000000 ? '50%' : '10%'}
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-bold">
-                            {parseFloat(amount) > 100000000 ? 'HIGH RISK' : parseFloat(amount) > 50000000 ? 'MEDIUM RISK' : 'LOW RISK'}
-                          </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                      {Object.keys(vendorStats).map((vendor, idx) => (
+                        <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-sm text-white truncate">{vendor}</h4>
+                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{vendorStats[vendor].count} Transaksi</span>
+                          </div>
+                          <div className="text-slate-400 text-[11px]">
+                            Total Dana Terbayar:
+                            <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                              Rp {vendorStats[vendor].total.toLocaleString('id-ID')}
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-900 flex justify-between">
+                            <span>Transaksi Terakhir:</span>
+                            <span className="text-slate-400 font-semibold">{vendorStats[vendor].lastDate || '-'}</span>
+                          </div>
                         </div>
-
-                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full ${parseFloat(amount) > 100000000 ? 'bg-red-500 w-[85%]' : parseFloat(amount) > 50000000 ? 'bg-amber-500 w-[50%]' : 'bg-emerald-500 w-[10%]'}`}
-                          ></div>
-                        </div>
-
-                        <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
-                          {parseFloat(amount) > 100000000 
-                            ? "⚠️ Transaksi di atas Rp 100 Juta akan ditahan secara otomatis untuk diperiksa ulang oleh Internal Auditor." 
-                            : "✅ Transaksi memenuhi standar batas aman operasional harian."}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 text-[11px] space-y-1">
-                      <div className="font-bold flex items-center gap-1">
-                        <i data-lucide="info" className="w-3.5 h-3.5"></i> Tips Admin:
-                      </div>
-                      <p>Pastikan nominal tercantum presisi sesuai kwitansi fisik agar tidak memicu perbedaan rekonsiliasi kas di akhir bulan.</p>
+                      ))}
                     </div>
                   </div>
+                )}
 
-                </div>
+                {/* MODUL TAB 3: KAS KECIL & REKONSILIASI */}
+                {adminSubTab === 'petty' && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                      <div>
+                        <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                          <i data-lucide="wallet" className="text-sky-400 w-4 h-4"></i> Pengelolaan & Audit Kas Kecil (Petty Cash)
+                        </h3>
+                        <p className="text-slate-400 text-[11px] mt-0.5">Pencatatan khusus untuk transaksi tunai operasional harian kantor.</p>
+                      </div>
+                      <button onClick={() => alert("Fitur Top-Up Saldo Kas Kecil telah diajukan ke Finance Controller!")} className="bg-sky-600 hover:bg-sky-500 text-white font-semibold px-3 py-1.5 rounded-lg">
+                        + Ajukan Top-Up Kas Kecil
+                      </button>
+                    </div>
 
-                {/* TABEL DATA TERBARU */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                      <i data-lucide="list-tree" className="text-indigo-400 w-4 h-4"></i> Riwayat Pencatatan Transaksi Admin
-                    </h3>
-                    <span className="text-slate-400 text-[11px]">Menampilkan {transactions.length} Data Terbaru</span>
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                        <div className="text-slate-400 font-medium">Pengeluaran Kas Kecil Bulan Ini</div>
+                        <div className="text-2xl font-bold font-mono text-sky-400 mt-1">Rp {pettyCashTotal.toLocaleString('id-ID')}</div>
+                      </div>
+                      <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                        <div className="text-slate-400 font-medium">Batas Maksimal Kas Kecil Per Transaksi</div>
+                        <div className="text-2xl font-bold font-mono text-amber-400 mt-1">Rp 5.000.000</div>
+                      </div>
+                    </div>
 
-                  {transactions.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500">Belum ada transaksi yang diinput. Gunakan form di atas untuk mencatat.</div>
-                  ) : (
-                    <div className="overflow-x-auto">
+                    <div className="space-y-2">
+                      <h4 className="font-bold text-white text-xs">Riwayat Transaksi Kas Kecil</h4>
                       <table className="w-full text-left">
                         <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold">
                           <tr>
                             <th className="p-3">Kode TRX</th>
-                            <th className="p-3">Vendor / Pihak Ke-3</th>
-                            <th className="p-3">Cost Center</th>
+                            <th className="p-3">Vendor / Penerima</th>
+                            <th className="p-3">Tanggal</th>
                             <th className="p-3">Nominal</th>
-                            <th className="p-3">Audit Risk</th>
-                            <th className="p-3">Status Verification</th>
-                            <th className="p-3 text-right">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800 text-slate-200">
-                          {transactions.map(t => (
-                            <tr key={t.id} className="hover:bg-slate-800/50">
-                              <td className="p-3 font-mono text-[11px] text-slate-400 font-bold">
-                                {t.transaction_code || `TRX-${t.id}`}
-                              </td>
-                              <td className="p-3">
-                                <div className="font-bold text-white">{t.vendor_name}</div>
-                                <div className="text-[10px] text-slate-500">{t.payment_method || 'Bank Transfer'} • {t.tax_category || 'PPN 11%'}</div>
-                              </td>
-                              <td className="p-3">
-                                <span className="bg-slate-950 border border-slate-800 px-2 py-1 rounded text-[10px] text-slate-300">
-                                  {t.cost_center || 'Operational'}
-                                </span>
-                              </td>
-                              <td className="p-3 font-mono font-bold text-indigo-300">
-                                Rp {(t.amount || 0).toLocaleString('id-ID')}
-                              </td>
-                              <td className="p-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.risk_score > 40 ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
-                                  {t.risk_score || 10}% {t.risk_score > 40 ? 'HIGH' : 'LOW'}
-                                </span>
-                              </td>
-                              <td className="p-3">
-                                {t.status === 'PENDING_AUDIT' ? (
-                                  <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] font-bold">Pending Audit</span>
-                                ) : (
-                                  <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px] font-bold">Approved</span>
-                                )}
-                              </td>
-                              <td className="p-3 text-right space-x-2">
-                                <button onClick={() => alert(`Kwitansi Bukti ${t.vendor_name} berhasil dicetak!`)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[10px] font-semibold">
-                                  Cetak Kwitansi
-                                </button>
-                                <button onClick={() => handleDeleteTransaction(t.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded text-[10px] font-semibold">
-                                  Hapus
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {pettyCashTransactions.length === 0 ? (
+                            <tr><td colSpan="4" className="p-4 text-center text-slate-500">Belum ada transaksi dengan metode Petty Cash.</td></tr>
+                          ) : (
+                            pettyCashTransactions.map(t => (
+                              <tr key={t.id}>
+                                <td className="p-3 font-mono text-slate-400">{t.transaction_code || `TRX-${t.id}`}</td>
+                                <td className="p-3 font-bold">{t.vendor_name}</td>
+                                <td className="p-3 text-slate-400">{t.trans_date}</td>
+                                <td className="p-3 font-mono text-sky-300 font-bold">Rp {(t.amount || 0).toLocaleString('id-ID')}</td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* MODUL TAB 4: FILTER & EXPORT LAPORAN */}
+                {adminSubTab === 'export' && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-xs space-y-6">
+                    <div>
+                      <h3 className="font-bold text-sm text-white">Analisis & Generator Laporan Admin</h3>
+                      <p className="text-slate-400 text-[11px] mt-0.5">Unduh data mentah transaksi ke format spreadsheet untuk keperluan audit internal.</p>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 p-6 rounded-xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-white text-sm">Download Laporan Keuangan Format CSV</div>
+                          <div className="text-slate-400 text-xs mt-1">Berisi seluruh kolom transaksi termasuk status audit dan nomor bukti.</div>
+                        </div>
+                        <button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-600/25 flex items-center gap-2">
+                          <i data-lucide="download" className="w-4 h-4"></i> Download Spreadsheet (.CSV)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               </div>
             )}
