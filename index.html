@@ -34,7 +34,7 @@
       const [currentMenu, setCurrentMenu] = useState('input');
       const [transactions, setTransactions] = useState([]);
 
-      // State Form Admin Lengkap
+      // State Form Admin
       const [transType, setTransType] = useState('EXPENSE');
       const [vendorName, setVendorName] = useState('');
       const [amount, setAmount] = useState('');
@@ -83,7 +83,7 @@
         }
       };
 
-      // FUNGSI SIMPAN TRANSAKSI DENGAN STRUKTUR KOLOM DARI SOLUSI 1
+      // FUNGSI SIMPAN TRANSAKSI
       const handleAddTransaction = async (e) => {
         e.preventDefault();
         const numAmount = parseFloat(amount);
@@ -95,7 +95,10 @@
         else if (numAmount > 50000000) calculatedRisk = 50;
         else if (numAmount > 20000000) calculatedRisk = 30;
 
+        const generatedCode = 'TRX-' + Math.floor(Date.now() / 1000);
+
         const newRecord = {
+          transaction_code: generatedCode,
           type: transType,
           vendor_name: vendorName,
           amount: numAmount,
@@ -299,7 +302,7 @@
                 {/* FORM ENTRY & LIVE RISK ENGINE */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   
-                  {/* FORM INPUT utama */}
+                  {/* FORM INPUT UTAMA */}
                   <form onSubmit={handleAddTransaction} className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 text-xs">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                       <h3 className="font-bold text-sm text-white flex items-center gap-2">
@@ -367,7 +370,7 @@
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-slate-400 mb-1 font-semibold">Upload Bukti / Nota (PDF/JPG)</label>
+                        <label className="block text-slate-400 mb-1 font-semibold font-mono">Upload Bukti / Nota (PDF/JPG)</label>
                         <input type="file" onChange={(e) => setFileName(e.target.files[0]?.name || '')} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer" />
                       </div>
 
@@ -440,6 +443,7 @@
                       <table className="w-full text-left">
                         <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold">
                           <tr>
+                            <th className="p-3">Kode TRX</th>
                             <th className="p-3">Vendor / Pihak Ke-3</th>
                             <th className="p-3">Cost Center</th>
                             <th className="p-3">Nominal</th>
@@ -451,6 +455,9 @@
                         <tbody className="divide-y divide-slate-800 text-slate-200">
                           {transactions.map(t => (
                             <tr key={t.id} className="hover:bg-slate-800/50">
+                              <td className="p-3 font-mono text-[11px] text-slate-400 font-bold">
+                                {t.transaction_code || `TRX-${t.id}`}
+                              </td>
                               <td className="p-3">
                                 <div className="font-bold text-white">{t.vendor_name}</div>
                                 <div className="text-[10px] text-slate-500">{t.payment_method || 'Bank Transfer'} • {t.tax_category || 'PPN 11%'}</div>
@@ -510,6 +517,7 @@
                     <table className="w-full text-left">
                       <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
                         <tr>
+                          <th className="p-3">Kode TRX</th>
                           <th className="p-3">Vendor</th>
                           <th className="p-3">Nominal</th>
                           <th className="p-3">Risk Score</th>
@@ -519,6 +527,7 @@
                       <tbody className="divide-y divide-slate-800 text-slate-200">
                         {transactions.map(t => (
                           <tr key={t.id}>
+                            <td className="p-3 font-mono text-[11px] text-slate-400">{t.transaction_code || `TRX-${t.id}`}</td>
                             <td className="p-3 font-semibold">{t.vendor_name}</td>
                             <td className="p-3 font-mono">Rp {t.amount?.toLocaleString('id-ID')}</td>
                             <td className="p-3">
