@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -20,7 +21,7 @@
 
     const SUPABASE_URL = "https://ztgjmyjrtrlyrgntvtny.supabase.co";
     const SUPABASE_KEY = "sb_publishable_GGh8txjx_3OFYwmTGdccjQ_zkxRYqep";
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
     function MultiRoleFinCoreApp() {
       const [currentUser, setCurrentUser] = useState(null);
@@ -75,8 +76,9 @@
       };
 
       const loadTransactions = async () => {
+        if (!supabaseClient) return;
         try {
-          const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+          const { data, error } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false });
           if (data) setTransactions(data);
         } catch (err) {
           console.log("Supabase error:", err);
@@ -111,7 +113,7 @@
         };
 
         try {
-          const { error } = await supabase.from('transactions').insert([newRecord]);
+          const { error } = await supabaseClient.from('transactions').insert([newRecord]);
           if (!error) {
             alert('Berhasil! Transaksi telah disimpan.');
             setVendorName('');
@@ -129,7 +131,7 @@
 
       const handleDeleteTransaction = async (id) => {
         if (confirm('Yakin ingin menghapus transaksi ini?')) {
-          await supabase.from('transactions').delete().eq('id', id);
+          await supabaseClient.from('transactions').delete().eq('id', id);
           loadTransactions();
         }
       };
@@ -836,7 +838,8 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<MultiRoleFinCoreApp />);
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<MultiRoleFinCoreApp />);
   </script>
 </body>
 </html>
